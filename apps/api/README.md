@@ -1,9 +1,13 @@
-# BizBrain AI — Backend milestone 1
+# BizBrain AI — Backend milestones 1–2
 
 A small synchronous FastAPI API backed by the existing Neon PostgreSQL `neondb`
-database. This milestone creates a schema only: **no business records, seeds,
-imports, write endpoints, or AI integrations**. The Next.js mock dashboard remains
-independent of this API.
+database. Milestone 1 created the schema and read-only REST APIs. Milestone 2 adds
+bounded OpenAI tool calling through `POST /api/v1/ai/ask`. There are **no business
+records, seeds, imports, or business-changing endpoints**. The Next.js mock
+dashboard remains independent of this API.
+
+See [the milestone 2 guide](MILESTONE_2.md) for the complete tool-calling flow,
+OpenAI configuration, examples, test isolation, and opt-in live smoke command.
 
 ## Module map
 
@@ -24,7 +28,8 @@ apps/api/
 │   ├── schemas.py                 # Pydantic response contracts
 │   ├── queries.py                 # SELECT-only database queries
 │   ├── check_database.py          # Read-only inspection and zero-row checks
-│   └── routers/                   # Health, businesses, orders
+│   ├── ai/                       # SDK client, contracts, tools, loop, opt-in smoke
+│   └── routers/                   # Health, businesses, orders, AI ask
 └── tests/                         # Isolated API/config/schema/session/migration tests
 ```
 
@@ -200,7 +205,7 @@ live checks above only inspect schema and count records. Future integration test
 must require a separately configured test database/branch and must never default
 to `DATABASE_URL` or silently target the primary Neon database.
 
-### Milestone verification — 4 November 2026
+### Milestone 1 verification — 4 November 2026
 
 - Python 3.12.8; editable backend installation completed.
 - Ruff lint and formatting checks passed.

@@ -97,4 +97,7 @@ def test_listing_failure_is_not_disguised_as_empty(
 
 def test_no_business_write_routes(client: TestClient) -> None:
     paths = client.get("/openapi.json").json()["paths"]
-    assert all(set(methods) == {"get"} for methods in paths.values())
+    assert set(paths["/api/v1/ai/ask"]) == {"post"}
+    assert all(
+        set(methods) == {"get"} for path, methods in paths.items() if path != "/api/v1/ai/ask"
+    )

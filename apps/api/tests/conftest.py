@@ -1,6 +1,7 @@
 from collections.abc import Iterator
 from unittest.mock import Mock
 
+import httpx
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
@@ -13,12 +14,16 @@ from bizbrain_api.main import app
 
 @pytest.fixture(autouse=True)
 def isolate_database(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """No test may open a PostgreSQL connection, even if local credentials exist."""
+    """Unit tests cannot use real PostgreSQL or HTTP connections."""
 
     def forbidden_connection(*args: object, **kwargs: object) -> None:
-        raise AssertionError("PostgreSQL access is forbidden in unit tests")
+        raise AssertionError("Real network access is forbidden in unit tests")
 
     monkeypatch.setattr(psycopg, "connect", forbidden_connection)
+    # Block real HTTP sockets without interfering with TestClient's in-memory transport.
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", forbidden_connection)
+    monkeypatch.setenv("OPENAI_API_KEY", "unit-test-key-not-a-real-secret")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-6-luna")
     monkeypatch.setenv(
         "DATABASE_URL", "postgresql+psycopg://unit:unit@invalid/neondb?sslmode=require"
     )

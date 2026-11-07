@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
 from bizbrain_api.database import DatabaseConfigurationError, dispose_engine
-from bizbrain_api.routers import businesses, health, orders
+from bizbrain_api.routers import ai, businesses, health, orders
 
 
 @asynccontextmanager
@@ -30,3 +30,4 @@ async def database_unavailable(request: Request, exc: Exception) -> JSONResponse
 app.include_router(health.router)
 app.include_router(businesses.router)
 app.include_router(orders.router)
+app.include_router(ai.router)

@@ -3,7 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError
@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     )
 
     database_url: SecretStr | None = None
+    openai_api_key: SecretStr | None = None
+    openai_model: str = Field(default="gpt-6-luna", min_length=1, max_length=100)
 
     def sqlalchemy_url(self) -> URL:
         if self.database_url is None:
