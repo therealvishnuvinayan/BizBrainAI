@@ -1,21 +1,19 @@
 import json
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 from uuid import UUID
 
 import httpx
 import pytest
+from ai_helpers import call, model_response
 from fastapi.testclient import TestClient
 from openai import APIConnectionError, APITimeoutError, AuthenticationError, OpenAI
-from openai.types.responses import Response, ResponseFunctionToolCall, ResponseReasoningItem
+from openai.types.responses import ResponseReasoningItem
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session
 
 from bizbrain_api.ai import client as client_module
-from bizbrain_api.ai import service, smoke, tools
+from bizbrain_api.ai import graph, service, smoke, tools
 from bizbrain_api.ai.schemas import (
     BusinessesResult,
     CountOrdersResult,
@@ -24,111 +22,6 @@ from bizbrain_api.ai.schemas import (
 )
 from bizbrain_api.config import Settings
 from bizbrain_api.database import DatabaseConfigurationError
-
-
-def call(
-    name: str = "count_orders", arguments: str = "{}", call_id: str = "call_1"
-) -> ResponseFunctionToolCall:
-    return ResponseFunctionToolCall(
-        type="function_call", name=name, arguments=arguments, call_id=call_id
-    )
-
-
-def model_response(
-    *items: object,
-    answer: str | None = None,
-    citations: tuple[str, ...] = ("call_1",),
-    answer_status: str = "answered",
-    status: str = "completed",
-    usage: bool = True,
-) -> Response:
-    output = list(items)
-    if answer is not None:
-        output.append(
-            {
-                "type": "message",
-                "id": "msg_1",
-                "role": "assistant",
-                "status": "completed",
-                "content": [
-                    {
-                        "type": "output_text",
-                        "annotations": [],
-                        "text": json.dumps(
-                            {
-                                "answer": answer,
-                                "status": answer_status,
-                                "evidence_call_ids": citations,
-                                "limitations": [],
-                            }
-                        ),
-                    }
-                ],
-            }
-        )
-    return Response(
-        id="resp_unit",
-        created_at=0,
-        model="gpt-6-luna",
-        object="response",
-        output=output,
-        parallel_tool_calls=True,
-        tool_choice="auto",
-        tools=[],
-        status=status,
-        usage={
-            "input_tokens": 10,
-            "output_tokens": 5,
-            "total_tokens": 15,
-            "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
-            "output_tokens_details": {"reasoning_tokens": 2},
-        }
-        if usage
-        else None,
-    )
-
-
-@pytest.fixture
-def db_session(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    session = MagicMock(spec=Session)
-    session.info = {"active": 0}
-    session.scalars.return_value = []
-    session.scalar.return_value = None
-    session.execute.return_value.scalar_one.return_value = 0
-
-    @contextmanager
-    def isolated_session(engine: object) -> Iterator[MagicMock]:
-        session.info["active"] += 1
-        try:
-            yield session
-        finally:
-            session.close()
-            session.info["active"] -= 1
-
-    monkeypatch.setattr(tools, "get_engine", lambda: None)
-    monkeypatch.setattr(tools, "Session", isolated_session)
-    return session
-
-
-@pytest.fixture
-def fake_model(monkeypatch: pytest.MonkeyPatch, db_session: MagicMock):
-    def make(responses: list[Response | Exception]) -> MagicMock:
-        responses_iter = iter(responses)
-
-        def respond(**kwargs: object) -> Response:
-            assert db_session.info["active"] == 0, "Session held open during model request"
-            value = next(responses_iter)
-            if isinstance(value, Exception):
-                raise value
-            return value
-
-        client = MagicMock()
-        client.__enter__.return_value = client
-        client.responses.create.side_effect = respond
-        monkeypatch.setattr(service, "create_client", lambda: client)
-        return client
-
-    return make
 
 
 def test_count_flow_preserves_reasoning_outputs_call_ids_and_real_usage(
@@ -160,8 +53,8 @@ def test_count_flow_preserves_reasoning_outputs_call_ids_and_real_usage(
     assert first["include"] == ["reasoning.encrypted_content"]
     assert first["max_output_tokens"] == 2048
     assert first["input"] == [{"role": "user", "content": "How many orders?"}]
-    assert second["input"][1] == reasoning
-    assert second["input"][2].type == "function_call"
+    assert second["input"][1] == reasoning.model_dump(mode="json", exclude_none=True)
+    assert second["input"][2]["type"] == "function_call"
     tool_output = second["input"][3]
     assert tool_output["type"] == "function_call_output"
     assert tool_output["call_id"] == "call_1"
@@ -332,7 +225,7 @@ def test_empty_business_results_cannot_establish_order_delay(fake_model) -> None
     result = service.ask_question("Why is order #4821 delayed?")
     assert result.status == "insufficient_evidence"
     assert result.evidence[0].result.businesses == []
-    assert "Never establish a root cause" in service.INSTRUCTIONS
+    assert "Never establish a root cause" in graph.INSTRUCTIONS
 
 
 def test_missing_order_retains_absence_evidence_and_limitation(fake_model) -> None:
@@ -587,7 +480,7 @@ def test_official_sdk_serializes_the_complete_protocol_without_network(db_sessio
         max_retries=0,
         http_client=httpx.Client(transport=httpx.MockTransport(handle)),
     ) as client:
-        result = service.run_tool_loop("Count orders", client, "gpt-6-luna")
+        result = service.run_investigation("Count orders", client, "gpt-6-luna")
     assert result.status == "answered"
     assert len(requests) == 2
     assert requests[1]["input"][-1]["call_id"] == "call_opaque_identifier"
