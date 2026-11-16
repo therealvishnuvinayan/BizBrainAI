@@ -1,132 +1,84 @@
-# BizBrain AI — Frontend V1
+# BizBrain AI
 
-A responsive, light-theme business intelligence frontend based on the supplied welcome, overview, and investigation designs. This is a **frontend demonstration with synthetic data**, not a live AI platform.
+**An in-progress Applied AI engineering project for investigating business questions with inspectable evidence.** Built to explore how a useful business interface, typed database APIs, and bounded LLM tool calling fit together.
 
-## Run locally
+[Explore the frontend demo](https://bizbrainai.vercel.app) · [Backend setup and API reference](apps/api/README.md)
 
-Use Node.js 20.9+ (Node 22 LTS recommended) and npm. Dependencies are installed and pinned in `package-lock.json`.
+The hosted Next.js demo uses **synthetic local data and prepared investigations**. The FastAPI backend is implemented and tested separately; the frontend does not call it. Backend deployment and a successful live end-to-end AI answer are not verified.
+
+## Implemented
+
+- **Frontend demo:** responsive business dashboard, revenue/order charts, prepared order investigation, source-record dialogs, searchable sample records, and desktop/mobile navigation. Authentication controls are visibly disabled.
+- **Read-only API:** FastAPI health/readiness endpoints, bounded business/order lists, and order detail by internal UUID. SQLAlchemy models and an Alembic migration define PostgreSQL businesses, orders, and order items, with Neon-compatible configuration.
+- **LLM tool calling:** `POST /api/v1/ai/ask` uses the official OpenAI Responses API. The model selects from three server-side tools: `list_businesses`, `count_orders`, and `get_order_by_external_id`. Strict argument validation and fixed parameterized queries control execution.
+- **LangGraph orchestration:** a stateless graph initializes a request, calls the model, executes tools, and validates the answer. It enforces three model attempts and five tool executions, preserves Responses continuation items, and returns server-owned evidence and tool activity. Verified with offline model/database substitutes and the real graph scheduler.
+- **Failure handling:** missing records, database failures, provider errors, invalid citations, and exhausted budgets produce explicit outcomes. AI tools use read-only transactions and bounded query timeouts.
+
+## Architecture
+
+| Layer             | Stack                                                                                             | Current role                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Web — `src/`      | Next.js App Router, React, TypeScript, Tailwind CSS v4, adapted shadcn/Radix components, Recharts | Independent synthetic demo                                    |
+| API — `apps/api/` | Python, FastAPI, Pydantic, OpenAI SDK, LangGraph                                                  | REST endpoints and bounded question → tools → answer workflow |
+| Storage           | PostgreSQL/Neon, SQLAlchemy, Psycopg, Alembic                                                     | Relational schema and SELECT-only application queries         |
+
+The model proposes tool calls; Python validates and executes them. The server constructs evidence from actual tool results and checks that answer citations reference those results. This verifies provenance, not the semantic truth of every sentence. No arbitrary SQL, Python, or HTTP tool is exposed to the model.
+
+## Run the frontend
+
+Use Node.js 20.9+; verification used Node 22.12.0.
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Open <http://localhost:3000>. Choose **Explore Demo Workspace**; no account or environment variables are needed.
+Open <http://localhost:3000> and choose **Explore Demo Workspace**. No API keys, backend, or database are needed. The demo includes overview, investigations, connections, knowledge, history, and settings pages. Connection statuses and tool activity are simulated.
+
+## Run the API
+
+Use Python 3.12+; verification used Python 3.12.8.
 
 ```sh
-npm run lint       # ESLint, including accessibility and React rules
-npm run typecheck  # App Router route types and strict TypeScript
-npm run build     # Production build
-npm start         # Serve the production build
-npm run test:e2e  # Desktop/mobile browser tests against a production build
-npm run test:visual # Compare 9 screenshots with the pre-refactor UI
-npm run format    # Format project source with Prettier
+cd apps/api
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[dev]'
+test -e .env || (umask 077; cp .env.example .env)
+uvicorn bizbrain_api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Browser tests use an installed Google Chrome. If Chrome is unavailable, remove `channel: "chrome"` from both Playwright configurations and run `npx playwright install chromium`. Run `npm run build` before the browser tests. Playwright starts and stops its own server on port 3100; reports, traces, and current screenshots go into ignored folders. The visual baselines in `tests/visual/baselines` were captured before the Tailwind refactor; review any intentional design change before updating them.
+`GET /health` and [interactive API docs](http://127.0.0.1:8000/docs) work without credentials. Configure the ignored `apps/api/.env` for database/model requests: `DATABASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL`. The current database configuration requires a database named `neondb` with TLS. See the [backend README](apps/api/README.md) for schema preparation, tool contracts, and status codes. Keep this unauthenticated development API bound to localhost.
 
-## Routes
+## Tests and verification
 
-| Route                       | Purpose                                                                                 |
-| --------------------------- | --------------------------------------------------------------------------------------- |
-| `/`                         | Welcome, product preview, disabled authentication, demo entry                           |
-| `/demo/overview`            | KPIs, revenue and order charts, findings, recent investigations, sample sources, alerts |
-| `/demo/investigations/4821` | Complete prepared order investigation, evidence, recommendations, sample tool log       |
-| `/demo/investigations`      | Sample investigations and question entry                                                |
-| `/demo/connections`         | Clearly labeled simulated source catalog                                                |
-| `/demo/knowledge`           | Searchable, expandable sample source records                                            |
-| `/demo/history`             | Fixed sample investigation history                                                      |
-| `/demo/settings`            | Workspace, appearance, and privacy information                                          |
+```sh
+# Repository root
+npm run lint
+npm run typecheck
+npm run build
+npm run test:e2e
+npm run test:visual
 
-`/demo` redirects to the overview; unknown routes have a useful not-found page.
-
-## Source structure
-
-```text
-src/
-  app/
-    layout.tsx, page.tsx, globals.css, not-found.tsx, icon.svg
-    demo/
-      layout.tsx, page.tsx
-      overview/page.tsx
-      investigations/page.tsx
-      investigations/4821/page.tsx
-      connections/page.tsx
-      knowledge/page.tsx
-      history/page.tsx
-      settings/page.tsx
-  components/
-    auth/login-screen.tsx
-    dashboard/{dashboard,charts}.tsx
-    investigation/investigation-workspace.tsx
-    layout/app-shell.tsx
-    shared/{question-composer,evidence-dialog,workspace-pages}.tsx
-    ui/{brand,primitives,button,card,badge,tone-variants}.tsx
-  data/{business,investigation}.ts
-  lib/{format,utils}.ts
-  types/index.ts
-public/images/workspace-preview.png
-tests/e2e/workspace.spec.ts
-tests/visual/{screens.spec.ts,baselines/}
-playwright.config.ts, playwright.visual.config.ts
-components.json
+# apps/api, with its virtual environment active
+ruff check .
+ruff format --check .
+pytest
 ```
 
-Routes provide metadata and composition. The shared demo layout owns navigation and search. Feature components own their UI and local interaction state. Typed sample records are kept separately from presentation and formatting. KPIs are derived from the same weekly snapshots used by the charts. Shared UI primitives retain Radix Dialog and Dropdown Menu for focus management, Escape handling, and keyboard navigation.
+Verified on **16 November 2026**: frontend lint, TypeScript, and production build; backend Ruff lint/format and **105 offline tests**. Browser results: **25 passed, one intentional duplicate tablet check skipped**, plus **9 screenshot comparisons passed** across login, dashboard, and investigation at desktop/tablet/mobile sizes. Browser tests use installed Google Chrome and start a local production server after the build.
 
-The application uses Next.js App Router, React, strict TypeScript, Tailwind CSS v4, Lucide icons, and Recharts. The Inter variable font is bundled locally. No runtime font or image service is required. Tailwind utilities own component styling and responsive layouts. `src/app/globals.css` contains shared CSS-variable tokens, global accessibility/reset rules, and one fade animation. All routes are statically prerendered.
+Backend tests block real sockets/HTTP/PostgreSQL connections, use in-memory fixtures, and exercise SDK serialization with `httpx.MockTransport`. They cover graph transitions, execution budgets, read-only dispatch, evidence validation, session cleanup, and the existing API contract. No live OpenAI calls, database queries, or migrations were performed for this checkpoint.
 
-`components.json` configures shadcn/ui with Tailwind v4 and the existing aliases. Button, Card, and Badge use locally adapted shadcn composition/variant patterns with the original BizBrain appearance. `cn()` combines `clsx` and `tailwind-merge`; dynamic tones use complete, statically discoverable utility strings. Keep reusable values in the theme, use component utilities for layout, and preserve the existing breakpoint values. See [the styling audit and migration report](docs/styling-refactor.md) for the before/after inventory, remaining custom styling, and visual verification.
+## Current limitations
 
-For a future FastAPI integration, replace the local data imports at the route/feature boundary with a typed data-access layer, preserving the record IDs and UI types. The current milestone deliberately includes no API routes, authentication provider, persistence, database, LLM SDK, or backend.
+- The web demo and API are not integrated. No production authentication, tenant isolation, external business connectors, imported business dataset, or seed workflow is implemented.
+- The AI workflow is verified offline. A live end-to-end answer still needs validation; no deployed AI backend is claimed.
+- Available tools can list businesses, count orders, and look up order status/timestamps. They cannot establish inventory risks, revenue explanations, or order-delay root causes.
+- The graph has no persistent memory, checkpointing, human approval, RAG, or multi-agent workflow. Limits apply per operation, not as a total HTTP request deadline.
 
-## Working interactions
+## Next steps
 
-- Demo entry, all sidebar routes, active navigation, mobile drawer, and skip-to-content link.
-- Workspace/profile menus, sample notifications, search, and Cmd/Ctrl+K.
-- Recharts tooltips and 4-/8-week selectors, plus accessible chart data tables.
-- Prepared business questions, question suggestions, and explicit unsupported-question feedback.
-- Recent investigation links and the complete order #4821 investigation.
-- Expandable timeline events, finding citations, source-record dialogs, and sample tool-result inspection.
-- Recommendation details, two supported follow-ups, visit-local bookmarking, copy-link (with manual fallback), and JSON export.
-- Sample connection details, operational alert details, knowledge filtering, and empty results.
-- Account tabs switch their presentation, while credential fields and authentication actions remain disabled.
-
-### Prepared questions
-
-- Why is order #4821 delayed?
-- Why did revenue increase last week?
-- Which SKUs are at inventory risk?
-- When will stock arrive?
-- What should we tell the customer?
-
-Only these prepared intents and a few explicit short aliases are recognized. Other text receives a demo limitation, including arbitrary questions that merely mention order 4821. No generated answer or tool execution is fabricated.
-
-## Sample scenario and metric definitions
-
-The fictional snapshot is fixed at **November 24, 2026**; it does not follow the wall clock. The revenue and order KPIs show the latest week, compared with the previous week. Revenue is $428,310 versus $398,842 (+7.4%); 12,480 of 12,946 orders were fulfilled on time (96.4%). The remaining 3.6% are delayed. There are 24 at-risk SKUs out of 353 (6.8%). The stock alerts show the three most urgent items.
-
-Order #4821 was created November 17. Allocation of ST-200 failed November 18 because available stock was zero. Partial shipment is not permitted. The November 22 dispatch promise was missed, so it is two days overdue in the November 24 snapshot. Twelve incoming units are expected November 25 and already backordered. A November 26 dispatch is a suggestion pending receipt, not a confirmed promise. Findings reference the order, allocation, inventory, and fulfillment records.
-
-All business records, customers, dates, source statuses, insights, activity durations, and history are fictional. Source logos are lightweight approximations. No Shopify, NetSuite, ShipStation, or Google Analytics account is connected. No analytics tracking or external requests are made by the demo flows. Bookmark state lasts only while the investigation component is mounted; no durable activity history is recorded.
-
-## Differences from the image references
-
-- Clear demo labels replace live/healthy integration claims and live-update timestamps.
-- Authentication is visibly unavailable; fields cannot accept or transmit credentials.
-- The order timeline and weekly metric comparisons were reconciled to make the scenario consistent.
-- Findings include source-record citations and timeline events expand into inspectable data.
-- Added chart tables, question suggestions, useful supporting routes, and accessible dialogs.
-- The avatar uses initials; brand and source marks are CSS/SVG approximations.
-- Cards reflow on tablet/mobile, with navigation in a drawer and horizontal scrolling confined to wide tables.
-- The welcome preview is captured from the implemented dashboard.
-
-## Verification and dependency notes
-
-The browser suite exercises the three primary pages at 1440×960 and 390×844, checks page overflow and runtime errors, and runs axe WCAG 2 A/AA and 2.1 AA checks. It also checks demo navigation, disabled credential controls, chart filtering, supported/unsupported questions, expandable evidence, follow-ups, bookmarks, exports, record filtering, and global search.
-
-Verified results: lint, strict TypeScript, and the production build pass. Playwright reports **25 passed, 1 intentionally skipped** (the tablet check runs once, not again in the mobile project). The three primary screens were visually reviewed at desktop, 834×1112 tablet, and mobile sizes. The supporting routes and source-record dialog also pass the automated accessibility checks. Dialogs restore keyboard focus after Escape, and page widths stay within the viewport. These automated checks supplement visual review; they are not a complete accessibility certification.
-
-`typescript-eslint` is pinned with an override to 8.48.1 for compatibility with Node 22.12 and TypeScript 5.9. The current newer transitive version requires Node 22.13+. The installed lint tooling reports 16 moderate development-only advisories stemming from `minimatch`. The suggested forced fix downgrades ESLint/Next lint configuration to incompatible major versions, so it is not applied. Runtime dependencies report no known vulnerabilities at verification time. Recheck dependency advisories before publishing.
-
-No commits, pushes, or deployment were created during the styling refactor. Existing staged work was left untouched.
+1. Resume at the citation-handoff regression in `apps/api/tests/test_ai.py`, then explicitly run the bounded live smoke check against an approved development/test database and verify the final answer cites executed evidence.
+2. Add an isolated database integration-test environment before introducing fixture loading or write operations.
+3. Connect one frontend investigation flow to the typed API, preserving clear demo/live boundaries; add authentication and tenant scoping before exposing business data publicly.

@@ -21,3 +21,15 @@ __pycache__/
 htmlcov/
 build/
 dist/
+
+# Private learning notes and internal reports (kept locally, not published)
+/apps/api/MILESTONE_*.md
+/docs/styling-refactor.md
+
+# Local runtime data and request/response traces
+*.log
+*.db
+*.sqlite
+*.sqlite3
+/apps/api/logs/
+/apps/api/traces/
